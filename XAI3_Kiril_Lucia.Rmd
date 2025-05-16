@@ -121,10 +121,10 @@ pdp_temp_hum <- partial(
 )
 
 # 4. Create a ggplot heatmap of predicted values using geom_tile()
-p <- ggplot(pdp_temp_hum, aes(x = temp, y = hum)) +
+p <- ggplot(pdp_temp_hum, aes(x = temp, y = hum, fill= yhat)) +
   geom_tile() +
   # 5. Overlay white contour lines showing the density of actual temp vs hum observations
-  geom_density_2d(data = bike_sample, aes(x = temp, y = hum), color = "white") +
+  geom_density_2d(data = bike_sample, aes(x = temp, y = hum), color = "white", inherit.aes = FALSE) +
   # Apply plasma color palette for the heatmap
   scale_fill_viridis(option = "plasma", name = "Predicted\nRentals") +
   # Use a minimal theme and place the legend at the bottom
