@@ -2,29 +2,18 @@
 title: "XAI 3: Partial Dependence Plots (PDP)"
 output:
   html_document: default
-date: "2025-05-07"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ```{r warning = FALSE}
-# Load required libraries
+# Load libraries
 library(tidyverse)
 library(randomForest)
 library(pdp)
 library(ggpubr)
 library(viridis)
-
-# Suppress package loading messages
-suppressPackageStartupMessages({
-  library(tidyverse)
-  library(randomForest)
-  library(pdp)
-  library(ggpubr)
-})
-
+library(dplyr)
+library(ggplot2)
+library(scales) 
 setwd(".")
 
 ```
@@ -33,7 +22,7 @@ setwd(".")
 
 ```{r Excercise 1}
 # Load and preprocess bike data
-bike_data <- read_csv("day.csv", show_col_types = FALSE) %>%
+bike_data <- read_csv("Data/day.csv", show_col_types = FALSE) %>%
   mutate(
     dteday = as.Date(dteday),
     days_since_2011 = as.numeric(dteday - as.Date("2011-01-01")),
@@ -87,21 +76,6 @@ plot_hum     # Plot for hum
 plot_wind    # Plot for windspeed
 ```
 
-## Interpretations:
-
-1. **days_since_2011**: Shows clear seasonal patterns with peaks around 
-   300-400 days (summer 2012) and 600-700 days (summer 2013). Annual
-   growth trend of ~15% observed between cycles.
-
-2. **temp**: Strong positive relationship up to 0.7 (normalized temp ~25°C),
-   with optimal rentals between 0.5-0.8. Drops at extremes (>0.85).
-
-3. **hum**: Negative impact becomes significant above 0.6 (60% humidity).
-   Rentals decrease ~25% when humidity exceeds 80%.
-
-4. **windspeed**: Steady decline beyond 0.3 (30 km/h). 50% wind speed increase
-   (0.2 to 0.3) corresponds to ~18% rental decrease.
-
 
 # PART 2: 2D PDP for Bike Rentals
 ```{r}
@@ -136,111 +110,82 @@ print(p)
 ```
 
 
-## Interpretation :
-
-The interaction analysis reveals:
-- Optimal conditions: temp 0.6-0.8 (20-28°C) + hum 0.4-0.6 (40-60%)
-- High temp (>0.8) only beneficial with low humidity (<0.5)
-- Dangerous combination: hum >0.7 negates temp benefits completely
-- Low-density regions (right corners) show model extrapolation - 
-  interpret with caution due to few observations
-
 
 
 # PART 3: PDP for House Prices
 
 
 ```{r}
-# Load and preprocess housing data
-house_data <- read_csv("kc_house_data.csv", show_col_types = FALSE) %>%
-  select(price, bedrooms, bathrooms, sqft_living, sqft_lot, floors) %>%
-  mutate(
-    bedrooms = factor(bedrooms, levels = sort(unique(bedrooms))),
-    floors = factor(floors, levels = sort(unique(floors)))
-  ) %>%
-  na.omit()
+# 1. Load the dataset and select relevant columns
+df <- read.csv("Data/kc_house_data.csv")
+df <- df %>% select(price, bedrooms, bathrooms, sqft_living, sqft_lot, floors)
 
-# Sample data
-set.seed(123)
-sampled_houses <- house_data %>% 
-  sample_n(size = min(1000, nrow(house_data)))
-```
+# 2. Convert 'bedrooms' and 'floors' to factor (categorical type)
+df$bedrooms <- factor(df$bedrooms)
+df$floors   <- factor(df$floors)
 
+# 3. Remove rows with missing values
+df <- na.omit(df)
 
-```{r}
-# Fit Random Forest model
-rf_house <- randomForest(price ~ ., 
-                        data = sampled_houses,
-                        importance = TRUE,
-                        ntree = 500)
-
-# Generate PDPs
-house_features <- c("bedrooms", "bathrooms", "sqft_living", "floors")
-house_plots <- list()
-
-for (feature in house_features) {
-  pdp_data <- partial(rf_house, 
-                     pred.var = feature, 
-                     train = sampled_houses)
-  
-  base_plot <- ggplot(pdp_data, aes(x = !!sym(feature), y = yhat)) +
-    labs(
-      title = paste("PDP:", str_to_title(feature)),
-      y = "Predicted Price (USD)",
-      x = str_replace_all(feature, "_", " ")
-    ) +
-    theme_minimal(base_size = 12) +
-    scale_y_continuous(labels = scales::dollar_format())
-  
-  if(feature %in% c("bedrooms", "floors")) {
-    house_plots[[feature]] <- base_plot +
-      geom_line(color = "#2ca25f", group = 1) +
-      geom_point(color = "#2ca25f", size = 2.5) +
-      geom_rug(
-        data = sampled_houses, 
-        aes(x = !!sym(feature)), 
-        sides = "b", 
-        alpha = 0.3,
-        inherit.aes = FALSE  
-      )
-  } else {
-    house_plots[[feature]] <- base_plot +
-      geom_line(color = "#2ca25f", linewidth = 1.2) +
-      geom_rug(
-        data = sampled_houses, 
-        aes(x = !!sym(feature)),  
-        sides = "b", 
-        alpha = 0.3,
-        inherit.aes = FALSE
-      )
-  }
-}
-```
+# 4. For performance, take a random sample of 1000 rows from the data
+set.seed(123)                 # for reproducibility
+df_sample <- df %>% sample_n(1000)
 
 
-```{r}
-# Arrange plots
-ggarrange(plotlist = house_plots, ncol = 2, nrow = 2) %>%
-  annotate_figure(
-    top = text_grob("Partial Dependence Plots: House Prices", 
-                   size = 14, face = "bold")
-  )
+# 5. Train a Random Forest model to predict house price from the features
+set.seed(123)  # ensure reproducible model
+rf_model <- randomForest(price ~ ., data = df_sample)
+
+# Partial dependence for 'bedrooms'
+pd_bed <- partial(rf_model, pred.var = "bedrooms", train = df_sample)
+head(pd_bed)  # peek at the partial dependence data (bedrooms vs. yhat)
+
+# Plot PDP for bedrooms (categorical predictor)
+ggplot(pd_bed, aes(x = bedrooms, y = yhat)) +
+  geom_point(color = "steelblue", size = 3) +         # one point per bedroom level
+  labs(title = "Partial Dependence of Price on Bedrooms",
+       x = "Number of Bedrooms",
+       y = "Predicted Price") +
+  scale_y_continuous(labels = dollar_format(prefix="$")) +
+  geom_rug(data = df_sample, aes(x = bedrooms), sides="b", inherit.aes = FALSE)
+
+# Partial dependence for 'bathrooms'
+pd_bath <- partial(rf_model, pred.var = "bathrooms", train = df_sample)
+
+# Plot PDP for bathrooms (continuous predictor)
+ggplot(pd_bath, aes(x = bathrooms, y = yhat)) +
+  geom_line(color = "darkorange", size = 1) +         # line plot for continuous feature
+  labs(title = "Partial Dependence of Price on Bathrooms",
+       x = "Number of Bathrooms",
+       y = "Predicted Price") +
+  scale_y_continuous(labels = dollar_format(prefix="$")) +
+  geom_rug(data = df_sample, aes(x = bathrooms), sides="b", inherit.aes = FALSE)
+
+# Partial dependence for 'sqft_living'
+pd_sqft <- partial(rf_model, pred.var = "sqft_living", train = df_sample)
+
+# Plot PDP for square footage of living area (continuous predictor)
+ggplot(pd_sqft, aes(x = sqft_living, y = yhat)) +
+  geom_line(color = "forestgreen", size = 1) +
+  labs(title = "Partial Dependence of Price on Living Area",
+       x = "Living Area (sq ft)",
+       y = "Predicted Price") +
+  scale_y_continuous(labels = dollar_format(prefix="$")) +
+  geom_rug(data = df_sample, aes(x = sqft_living), sides="b", inherit.aes = FALSE)
+
+# Partial dependence for 'floors'
+pd_floor <- partial(rf_model, pred.var = "floors", train = df_sample)
+
+# Plot PDP for floors (categorical predictor)
+ggplot(pd_floor, aes(x = floors, y = yhat)) +
+  geom_point(color = "purple", size = 3) +
+  labs(title = "Partial Dependence of Price on Floors",
+       x = "Number of Floors",
+       y = "Predicted Price") +
+  scale_y_continuous(labels = dollar_format(prefix="$")) +
+  geom_rug(data = df_sample, aes(x = floors), sides="b", inherit.aes = FALSE)
 
 ```
 
 
-## Interpretations :
-
-1. **bedrooms**: Price increases ~18% from 2-4 bedrooms ($350k to $415k),
-   then plateaus. Diminishing returns after 5 bedrooms.
-
-2. **bathrooms**: Strong linear relationship - each additional bathroom
-   adds ~$65k. Significant jump (2.5x) from 3.5 to 4 bathrooms.
-
-3. **sqft_living**: Near-linear positive trend. Each 1000 sqft increase
-   adds ~$250k. Sublinear above 4000 sqft (+$150k per 1000 sqft).
-
-4. **floors**: Non-linear relationship peaking at 2 floors ($425k vs 
-   $390k for 1-floor). 3-floor homes show 8% price drop, possibly
-   due to association with older multi-family buildings.
 
